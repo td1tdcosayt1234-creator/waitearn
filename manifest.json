@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "WaitEarn — public prototype",
+  "short_name": "WaitEarn",
+  "version": "0.3.0",
+  "description": "Prototype inspired by ChatWait: sponsored cards while AI chats generate responses, with a real-time backend + dashboard. Demo ads only — earnings are fake.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://chat.deepseek.com/*",
+        "https://grok.com/*",
+        "https://x.com/i/grok*",
+        "https://copilot.microsoft.com/*",
+        "https://chat.mistral.ai/*",
+        "https://perplexity.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://kimi.moonshot.cn/*",
+        "https://kimi.com/*",
+        "https://www.kimi.com/*",
+        "https://chat.qwen.ai/*",
+        "https://www.meta.ai/*",
+        "https://character.ai/*",
+        "https://www.character.ai/*"
+      ],
+      "js": ["content/card.js", "content/main.js"],
+      "css": ["content/card.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "WaitEarn (prototype)",
+    "default_popup": "popup/popup.html"
+  }
+}

@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DemoGPT — WaitEarn prototype demo</title>
+<link rel="stylesheet" href="../content/card.css" />
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 20% -10%, rgba(52, 211, 153, 0.12), transparent 60%),
+      radial-gradient(900px 500px at 90% 10%, rgba(14, 165, 233, 0.12), transparent 60%),
+      #0a0e17;
+    color: #e6eaf2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .page-title {
+    text-align: center;
+    margin: 26px 16px 4px;
+  }
+
+  .page-title h1 {
+    font-size: 22px;
+    margin: 0 0 6px;
+  }
+
+  .page-title h1 b {
+    background: linear-gradient(135deg, #34d399, #0ea5e9);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .page-title p {
+    margin: 0;
+    color: #9aa3b6;
+    font-size: 13px;
+  }
+
+  .frame {
+    width: min(960px, calc(100vw - 32px));
+    height: 600px;
+    margin: 18px 16px 8px;
+    display: flex;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    overflow: hidden;
+    background: rgba(13, 17, 28, 0.85);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .sidebar {
+    width: 210px;
+    flex: 0 0 auto;
+    background: rgba(255, 255, 255, 0.03);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .sb-logo {
+    font-weight: 800;
+    font-size: 15px;
+  }
+
+  .sb-btn {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    color: #e6eaf2;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .sb-btn:hover { background: rgba(255, 255, 255, 0.09); }
+
+  .sb-note {
+    font-size: 11px;
+    color: #7b8398;
+    line-height: 1.5;
+  }
+
+  .chat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .banner {
+    font-size: 11.5px;
+    color: #cbd5e1;
+    background: rgba(52, 211, 153, 0.08);
+    border-bottom: 1px solid rgba(52, 211, 153, 0.15);
+    padding: 8px 16px;
+  }
+
+  .transcript {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .msg { display: flex; }
+
+  .msg.user { justify-content: flex-end; }
+
+  .bubble {
+    max-width: 78%;
+    padding: 11px 14px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+  }
+
+  .msg.user .bubble {
+    background: #10a37f;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+
+  .msg.assistant .bubble {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    color: #dde3ee;
+    border-bottom-left-radius: 4px;
+  }
+
+  .dots { display: inline-flex; gap: 4px; padding: 4px 2px; }
+
+  .dots i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #8b93a7;
+    animation: blink 1.2s infinite;
+  }
+
+  .dots i:nth-child(2) { animation-delay: 0.2s; }
+  .dots i:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes blink {
+    0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+    40% { opacity: 1; transform: translateY(-2px); }
+  }
+
+  .composer {
+    display: flex;
+    gap: 10px;
+    padding: 14px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .composer input {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #e6eaf2;
+    border-radius: 12px;
+    padding: 11px 14px;
+    font-size: 14px;
+    outline: none;
+  }
+
+  .composer input:focus { border-color: rgba(52, 211, 153, 0.5); }
+
+  .send {
+    border: 0;
+    background: #10a37f;
+    color: #fff;
+    font-weight: 650;
+    border-radius: 12px;
+    padding: 11px 18px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .send:hover { filter: brightness(1.08); }
+
+  .stopbtn {
+    border: 0;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #f87171;
+    font-weight: 650;
+    border-radius: 12px;
+    padding: 11px 18px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .hint {
+    color: #6c7590;
+    font-size: 12px;
+    margin: 4px 16px 26px;
+    text-align: center;
+  }
+
+  .hint code {
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 6px;
+    padding: 1px 6px;
+  }
+</style>
+</head>
+<body>
+  <div class="page-title">
+    <h1>DemoGPT · <b>WaitEarn prototype</b></h1>
+    <p>Send any message — the fake “AI” will think for ~12s while the sponsored card runs the real offer engine (CTA click = verified ledger event).</p>
+  </div>
+
+  <div class="frame">
+    <aside class="sidebar">
+      <div class="sb-logo">⌘ DemoGPT</div>
+      <button class="sb-btn" id="newChat">+ New chat</button>
+      <button class="sb-btn" id="simulate">▶ Simulate a reply</button>
+      <div class="sb-note">
+        This page simulates a chat app so you can try the WaitEarn card
+        <b>without installing anything</b>. Balance is kept in this page's storage.
+      </div>
+      <div class="sb-note">✅ Real version supports: ChatGPT · Claude · Gemini · DeepSeek · Grok · Copilot · Mistral · Perplexity · Kimi · Qwen · Meta AI · Character.AI</div>
+    </aside>
+
+    <main class="chat">
+      <div class="banner">🎬 Simulation — the “AI” here is a timer, but the sponsored card + click ledger engine is the real extension code (backend challo click pay hoy).</div>
+      <div class="transcript" id="transcript"></div>
+      <div class="composer">
+        <input id="prompt" placeholder="Ask anything… (it will get a fake reply)" />
+        <button class="send" id="sendBtn">Send</button>
+        <button class="stopbtn" id="stopBtn" hidden>■ Stop</button>
+      </div>
+    </main>
+  </div>
+
+  <p class="hint">Next step: install as a real extension → open <code>chrome://extensions</code> → enable Developer mode → <b>Load unpacked</b> → select the <code>chatwait-clone</code> folder. See README.md.</p>
+
+  <script src="../content/card.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      const $ = (s) => document.querySelector(s);
+      const transcript = $("#transcript");
+      const input = $("#prompt");
+      const sendBtn = $("#sendBtn");
+      const stopBtn = $("#stopBtn");
+      const newBtn = $("#newChat");
+      const simBtn = $("#simulate");
+
+      const REPLIES = [
+        "Great question! While you wait for this reply, notice the sponsored card below the chat — that is exactly what ChatWait does. It turns idle generation time into small advertising impressions, and shares half the (mock) revenue with you. Every five seconds of continuous visibility counts as one impression.",
+        "Here's a simulated answer so you can watch the offer engine work. The card only appears while a response is generating, it never changes the chat layout, and it disappears the moment the reply is complete. Real earnings = verified CTA clicks: click the card's button to open the real offer URL and the server ledger credits your share (impressions are just attention stats).",
+        "Fun fact: the demo card's CTA opens real brand destinations, and the click lands on the server ledger (de-duped per offer, 15-min window). Money becomes real when the operator plugs real affiliate/sponsor payouts into /admin — conversions then land in that account and users get their share from the ledger. No ad network is attached by itself, and the page never reads your messages. Try the Stop button mid-generation to interrupt, just like a real AI chat."
+      ];
+
+      let generating = false;
+      let timers = [];
+
+      function clearTimers() {
+        timers.forEach((t) => { clearTimeout(t); clearInterval(t); });
+        timers = [];
+      }
+
+      function addMsg(role, text, isTyping) {
+        const wrap = document.createElement("div");
+        wrap.className = "msg " + role;
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        if (isTyping) {
+          bubble.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
+        } else {
+          bubble.textContent = text;
+        }
+        wrap.appendChild(bubble);
+        transcript.appendChild(wrap);
+        transcript.scrollTop = transcript.scrollHeight;
+        return wrap;
+      }
+
+      function setBusy(busy) {
+        generating = busy;
+        sendBtn.hidden = busy;
+        stopBtn.hidden = !busy;
+        input.disabled = busy;
+      }
+
+      function beginGeneration(replyText) {
+        if (generating) return;
+        setBusy(true);
+        const typingEl = addMsg("assistant", "", true);
+        if (window.WaitEarnCard) window.WaitEarnCard.show();
+
+        const t1 = setTimeout(() => {
+          typingEl.remove();
+          const msgEl = addMsg("assistant", "");
+          const span = msgEl.querySelector(".bubble");
+          const words = replyText.split(" ");
+          let i = 0;
+          const t2 = setInterval(() => {
+            const n = 1 + Math.floor(Math.random() * 2); // slower, more realistic pacing
+            span.textContent += (i ? " " : "") + words.slice(i, i + n).join(" ");
+            i += n;
+            transcript.scrollTop = transcript.scrollHeight;
+            if (i >= words.length) {
+              clearInterval(t2);
+              endGeneration();
+            }
+          }, 330);
+          timers.push(t2);
+        }, 900);
+        timers.push(t1);
+      }
+
+      function endGeneration() {
+        if (!generating) return;
+        clearTimers();
+        setBusy(false);
+        if (window.WaitEarnCard) window.WaitEarnCard.hide("end");
+      }
+
+      function send() {
+        const text = (input.value || "").trim() || "Tell me how this earn-while-waiting idea actually works?";
+        addMsg("user", text);
+        input.value = "";
+        beginGeneration(REPLIES[Math.floor(Math.random() * REPLIES.length)]);
+      }
+
+      sendBtn.addEventListener("click", send);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !generating) send();
+      });
+      stopBtn.addEventListener("click", () => {
+        // Interrupt like a real "Stop" button; card hides, stats are saved.
+        clearTimers();
+        transcript.lastElementChild && (() => {
+          const bubbleText = transcript.lastElementChild.querySelector(".dots");
+          if (bubbleText) transcript.lastElementChild.remove();
+        })();
+        endGeneration();
+      });
+      newBtn.addEventListener("click", () => { transcript.innerHTML = ""; });
+      simBtn.addEventListener("click", () => {
+        beginGeneration(REPLIES[Math.floor(Math.random() * REPLIES.length)]);
+      });
+    })();
+  </script>
+</body>
+</html>

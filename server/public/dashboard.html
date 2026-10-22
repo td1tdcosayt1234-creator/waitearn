@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WaitEarn — Live Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2334d399'/><stop offset='1' stop-color='%2338bdf8'/></linearGradient></defs><circle cx='16' cy='16' r='13' fill='url(%23g)'/></svg>" />
+<link rel="stylesheet" href="/dashboard.css" />
+</head>
+<body>
+  <div class="aurora a1"></div>
+  <div class="aurora a2"></div>
+  <div class="aurora a3"></div>
+
+  <header class="topbar glass">
+    <div class="brand">
+      <span class="mark"></span>
+      <span class="name">WaitEarn <em>live</em></span>
+    </div>
+
+    <div class="live-pill"><span class="dot"></span><span id="connText">connecting…</span></div>
+
+    <div class="top-chips">
+      <button class="chip" id="uidChip" title="Click to copy your device ID">⧉ <span id="uidShort">—</span></button>
+      <a class="chip" href="/admin" target="_blank" rel="noopener">🛠 Admin</a>
+      <button class="chip simulate" id="simulateBtn" title="Fires a synthetic attention event (no money moves — real earnings come from verified CTA clicks)">🧪 Test attention</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- WIDE: cumulative earnings -->
+    <section class="card wide">
+      <div class="card-label">Cumulative earnings <span class="quiet">· auto-grows</span><span class="cv-right" id="cumValue">$0.0000</span></div>
+      <canvas id="cumulus" height="150"></canvas>
+    </section>
+
+    <!-- LEFT: headline stats -->
+    <section class="col stats">
+      <div class="card balance">
+        <div class="card-label">Your balance <span class="pill">real clicks ledger</span></div>
+        <div class="card-value" id="balance">$0.0000</div>
+        <div class="card-sub">Server-side truth — aro clicks, verified & paid per offer</div>
+      </div>
+
+      <div class="stat-row">
+        <div class="card stat">
+          <div class="card-value sm" id="impressions">0</div>
+          <div class="card-label quiet">impressions</div>
+        </div>
+        <div class="card stat">
+          <div class="card-value sm" id="waited">0s</div>
+          <div class="card-label quiet">time waited</div>
+        </div>
+        <div class="card stat">
+          <div class="card-value sm" id="clicks">0</div>
+          <div class="card-label quiet">paid clicks 💸</div>
+        </div>
+        <div class="card stat">
+          <div class="card-value sm" id="sessions">0</div>
+          <div class="card-label quiet">AI replies</div>
+        </div>
+      </div>
+
+      <div class="card chart-card">
+        <div class="card-label">Impressions <span class="quiet">· live last 15 min</span></div>
+        <canvas id="spark" height="120"></canvas>
+      </div>
+
+      <div class="card">
+        <div class="card-label">By platform</div>
+        <div id="platforms" class="platform-list"><div class="muted">No impressions yet — run the extension or press ⚡.</div></div>
+      </div>
+    </section>
+
+    <!-- RIGHT: feed + split + leaderboard -->
+    <section class="col side">
+      <div class="card">
+        <div class="card-label">Live activity <span class="live-pill sm"><span class="dot"></span>live</span></div>
+        <div id="feed" class="feed"><div class="muted">Waiting for events…</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Real earnings ledger <span class="quiet">· verified CTA clicks only</span></div>
+        <div class="split-line"><span>Sponsors pay per verified click</span><b id="totalRevenue">$0.0000</b></div>
+        <div class="bars">
+          <div class="bar you"><i id="barYou"></i><label>you <b id="splitYou">$0.0000</b></label></div>
+          <div class="bar we"><i id="barWe"></i><label>platform <b id="splitWe">$0.0000</b></label></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Top ads by revenue</div>
+        <div id="topads" class="top-ads"><div class="muted">—</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Leaderboard <span class="quiet">· all devices</span></div>
+        <div id="leaderboard" class="lb"><div class="muted">—</div></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <footer class="foot">
+    <div><b>1.</b> Node server run korun <code>node server/server.js</code></div>
+    <div><b>2.</b> <code>/admin</code> e apnar REAL affiliate/sponsor link + payout per click boshan</div>
+    <div><b>3.</b> ChatGPT/DeepSeek/Grok te chat korle real offers card e dekha jabe</div>
+    <div><b>4.</b> User CTA click klepe → verified click → ledger e tumhar share 💸</div>
+  </footer>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>

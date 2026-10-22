@@ -1,0 +1,230 @@
+/* WaitEarn sponsored card styles — clean white & red edition.
+   The card floats in empty viewport space and never modifies the chat DOM. */
+
+.we-card {
+  --we-accent: #f97316;
+  position: fixed;
+  left: 50%;
+  bottom: var(--we-bottom, 104px);
+  transform: translateX(-50%);
+  width: min(540px, calc(100vw - 32px));
+  z-index: 2147483000;
+  background: #ffffff;
+  color: #241a1e;
+  border: 1px solid rgba(36, 26, 30, 0.08);
+  border-radius: 16px;
+  box-shadow:
+    0 22px 54px rgba(15, 18, 34, 0.22),
+    0 4px 12px rgba(36, 26, 30, 0.08);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  backdrop-filter: blur(10px);
+  transition:
+    opacity 0.3s cubic-bezier(0.22, 1.2, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1.2, 0.36, 1);
+  user-select: none;
+  overflow: hidden;
+}
+
+.we-card.we-hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(14px);
+  pointer-events: none;
+}
+
+.we-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+
+.we-sponsored {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.07);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.we-brandname {
+  font-size: 10px;
+  color: #9a92a4;
+  font-weight: 600;
+}
+
+.we-brandname em {
+  font-style: normal;
+  color: #b5abb8;
+}
+
+.we-info {
+  color: #9a92a4;
+  font-size: 10px;
+  cursor: help;
+  border: 1px solid rgba(36, 26, 30, 0.14);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.we-x {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: #9a92a4;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.we-x:hover {
+  color: #241a1e;
+  background: rgba(36, 26, 30, 0.06);
+}
+
+.we-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.we-emoji {
+  font-size: 26px;
+  flex: 0 0 auto;
+}
+
+.we-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.we-adbrand {
+  font-size: 11px;
+  color: var(--we-accent);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.we-headline {
+  font-weight: 650;
+  color: #1d141a;
+}
+
+.we-sub {
+  font-size: 12px;
+  color: #6f6879;
+  margin-top: 2px;
+}
+
+.we-cta {
+  flex: 0 0 auto;
+  background: var(--we-accent);
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-weight: 650;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(36, 26, 30, 0.14);
+}
+
+.we-cta:hover {
+  filter: brightness(1.06);
+}
+
+.we-cta-press {
+  animation: we-cta-pulse 0.45s ease;
+}
+
+@keyframes we-cta-pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+
+.we-progress {
+  height: 4px;
+  background: rgba(36, 26, 30, 0.06);
+  border-radius: 999px;
+  margin: 2px 12px 0;
+  overflow: hidden;
+}
+
+.we-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f97316, #fdba74);
+  transition: width 0.2s linear;
+}
+
+.we-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 14px 6px;
+}
+
+.we-earn {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 12px;
+  color: #6f6879;
+}
+
+.we-earn b {
+  color: #f97316;
+  font-variant-numeric: tabular-nums;
+}
+
+.we-pop {
+  animation: we-pop 0.6s ease;
+}
+
+@keyframes we-pop {
+  0%   { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+.we-timer {
+  font-size: 11px;
+  color: #9a92a4;
+  font-variant-numeric: tabular-nums;
+}
+
+.we-note {
+  font-size: 10px;
+  color: #b5abb8;
+  padding: 0 14px 9px;
+}
+
+.we-cash {
+  position: absolute;
+  bottom: 52px;
+  color: #f97316;
+  font-weight: 750;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgba(249, 115, 22, 0.35);
+  animation: we-float 1.4s ease-out forwards;
+}
+
+@keyframes we-float {
+  0%   { opacity: 0; transform: translateY(-4px); }
+  18%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-26px) translateX(var(--we-drift, 0)); }
+}

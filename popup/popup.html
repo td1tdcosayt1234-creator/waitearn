@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>WaitEarn</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="ph">
+    <div class="logo"><span class="logo-dot"></span>WaitEarn</div>
+    <span class="pill">prototype</span>
+  </header>
+
+  <section class="balance-card">
+    <div class="bc-label">Your balance</div>
+    <div class="bc-amount" id="balance">$0.0000</div>
+    <div class="bc-sub">Earns from verified ad clicks · 50% is yours</div>
+  </section>
+
+  <section class="server-row" id="serverRow">
+    <span class="srv-dot" id="srvDot"></span>
+    <span id="srvText">Server: checking…</span>
+    <b class="srv-b" id="srvBalance"></b>
+  </section>
+
+  <section class="stats">
+    <div class="stat"><b id="impressions">0</b><span>impressions</span></div>
+    <div class="stat"><b id="waited">0s</b><span>waited</span></div>
+    <div class="stat"><b id="clicks">—</b><span>ad clicks</span></div>
+    <div class="stat"><b id="sessions">0</b><span>AI replies</span></div>
+  </section>
+
+  <section class="split">
+    <div class="split-title">How REAL earnings work</div>
+    <div class="split-row"><span>You click a real offer CTA</span><b>1 verified event</b></div>
+    <div class="split-row you"><span>Your ledger cut (50%)</span><b id="youCut">—</b></div>
+    <div class="split-row"><span>Platform cut</span><b id="platCut">—</b></div>
+  </section>
+
+  <label class="toggle-row">
+    <span>Show offers while the AI thinks</span>
+    <input type="checkbox" id="enabled" />
+    <span class="switch" aria-hidden="true"></span>
+  </label>
+
+  <button id="reset" class="danger">Reset local stats</button>
+
+  <footer>Verified clicks pay the ledger · impressions are free stats · chats never read</footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
