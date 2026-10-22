@@ -20,6 +20,9 @@ $("#uidChip").addEventListener("click", async () => {
   setTimeout(() => { chip.innerHTML = '⧉ <span id="uidShort">' + uid.slice(0, 8) + "…</span>"; }, 1400);
 });
 
+/* viewing identity: the logged-in account's ledger when signed in, else device */
+let VIEW_UID = uid;
+
 /* --------------------------------- state ----------------------------------- */
 const S = {
   balance: 0,
@@ -186,7 +189,7 @@ function renderLeaderboard(top) {
   const lb = $("#leaderboard");
   if (!top || !top.length) return;
   lb.innerHTML = top.map((u, i) => `
-    <div class="lrow${u.userId === uid ? " me" : ""}">
+    <div class="lrow${u.userId === VIEW_UID ? " me" : ""}">
       <span class="rk">${["🥇", "🥈", "🥉", "4", "5"][i] || i + 1}</span>
       <span class="id">${u.short}…</span>
       <span class="bl">${money(u.balance)}</span>
@@ -314,95 +317,104 @@ function checkMilestones() {
 }
 
 /* --------------------------------- SSE ------------------------------------ */
-const es = new EventSource("/api/stream?userId=" + encodeURIComponent(uid));
+/* Reconnectable: connectSSE() is called again after login/logout so the
+   stream follows the active ledger identity (account ↔ device). */
+let es = null;
 
-function setConn(state, text) {
-  const pill = $(".live-pill");
-  pill.classList.remove("on", "off");
-  pill.classList.add(state);
-  $("#connText").textContent = text;
+function connectSSE() {
+  if (es) { try { es.close(); } catch (e) { /* ignore */ } }
+  const stream = new EventSource("/api/stream?userId=" + encodeURIComponent(VIEW_UID));
+  es = stream;
+  const isMe = (ev) => !ev.userId || ev.userId === VIEW_UID;
+
+  function setConn(state, text) {
+    const pill = $(".live-pill");
+    pill.classList.remove("on", "off");
+    pill.classList.add(state);
+    $("#connText").textContent = text;
+  }
+
+  stream.addEventListener("open", () => setConn("on", "live · sse"));
+  stream.addEventListener("error", () => setConn("off", "reconnecting…"));
+
+  stream.addEventListener("snapshot", (e) => {
+    try {
+      const s = JSON.parse(e.data);
+      S.balance = s.balance || 0;
+      S.clicks = s.clicks || 0;
+      S.impressions = s.impressions || 0;
+      S.waitedSeconds = s.waitedSeconds || 0;
+      S.sessions = s.sessions || 0;
+      S.platformCounts = s.platformCounts || {};
+      S.history = Array.isArray(s.history) ? s.history : [];
+      S.adStats = {};
+      if (Array.isArray(s.topAds)) {
+        for (const a of s.topAds) S.adStats[a.adId] = a;
+      }
+      if (!shown.balance) shown.balance = S.balance; // no count-up on first paint
+      renderStats(); renderTopAds(); checkMilestones(); drawSpark(); drawCumulus();
+    } catch (err) { /* ignore */ }
+  });
+
+  /* REAL money moment: a verified CTA click lands on the ledger */
+  stream.addEventListener("click", (e) => {
+    try {
+      const ev = JSON.parse(e.data);
+      if (!isMe(ev)) return;
+      S.balance = ev.balance;
+      S.clicks = ev.clicks;
+      S.platformCounts[ev.platform] = (S.platformCounts[ev.platform] || 0) + 1;
+      S.stamps.push(Date.now());
+      if (ev.ad && ev.ad.id) {
+        const st = S.adStats[ev.ad.id] || (S.adStats[ev.ad.id] = { adId: ev.ad.id, brand: ev.ad.brand, emoji: ev.ad.emoji, clicks: 0, revenue: 0 });
+        st.clicks = (st.clicks || 0) + 1;
+        st.revenue = Math.round((st.revenue + ev.revenue * ev.share * 2) * 10000) / 10000;
+      }
+      pushFeed(ev);
+      floatCash(ev.userCut);
+      toast("💸 Verified click · +" + money(ev.userCut) + " to " + (ev.ad && ev.ad.brand));
+      checkMilestones();
+      renderStats(); renderTopAds(); drawSpark(); drawCumulus();
+    } catch (err) { /* ignore */ }
+  });
+
+  stream.addEventListener("impression", (e) => {
+    try {
+      const ev = JSON.parse(e.data);
+      if (!isMe(ev)) return;
+      S.balance = ev.balance;
+      S.impressions = ev.impressions;
+      S.platformCounts[ev.platform] = (S.platformCounts[ev.platform] || 0) + 1;
+      S.stamps.push(Date.now());
+      S.history.push({ ts: ev.ts || Date.now(), balance: ev.balance });
+      if (S.history.length > 300) S.history.shift();
+      if (ev.ad && ev.ad.id && ev.bid != null) {
+        const st = S.adStats[ev.ad.id] || (S.adStats[ev.ad.id] = { adId: ev.ad.id, brand: ev.ad.brand, emoji: ev.ad.emoji, count: 0, revenue: 0 });
+        st.count += 1;
+        st.revenue = Math.round((st.revenue + ev.bid) * 10000) / 10000;
+      }
+      pushFeed(ev);
+      floatCash(ev.userCut);
+      checkMilestones();
+      renderStats(); renderTopAds(); drawSpark(); drawCumulus();
+    } catch (err) { /* ignore */ }
+  });
+
+  stream.addEventListener("session", (e) => {
+    try {
+      const ev = JSON.parse(e.data);
+      if (!isMe(ev)) return;
+      S.sessions = ev.sessions;
+      S.waitedSeconds = ev.waitedSeconds;
+      S.balance = ev.balance;
+      renderStats();
+    } catch (err) { /* ignore */ }
+  });
+
+  stream.addEventListener("leaderboard", (e) => {
+    try { renderLeaderboard(JSON.parse(e.data).top); } catch (err) { /* ignore */ }
+  });
 }
-
-es.addEventListener("open", () => setConn("on", "live · sse"));
-es.addEventListener("error", () => setConn("off", "reconnecting…"));
-
-es.addEventListener("snapshot", (e) => {
-  try {
-    const s = JSON.parse(e.data);
-    S.balance = s.balance || 0;
-    S.clicks = s.clicks || 0;
-    S.impressions = s.impressions || 0;
-    S.waitedSeconds = s.waitedSeconds || 0;
-    S.sessions = s.sessions || 0;
-    S.platformCounts = s.platformCounts || {};
-    S.history = Array.isArray(s.history) ? s.history : [];
-    S.adStats = {};
-    if (Array.isArray(s.topAds)) {
-      for (const a of s.topAds) S.adStats[a.adId] = a;
-    }
-    if (!shown.balance) shown.balance = S.balance; // no count-up on first paint
-    renderStats(); renderTopAds(); checkMilestones(); drawSpark(); drawCumulus();
-  } catch (err) { /* ignore */ }
-});
-
-/* REAL money moment: a verified CTA click lands on the ledger */
-es.addEventListener("click", (e) => {
-  try {
-    const ev = JSON.parse(e.data);
-    if (ev.userId && ev.userId !== uid) return;
-    S.balance = ev.balance;
-    S.clicks = ev.clicks;
-    S.platformCounts[ev.platform] = (S.platformCounts[ev.platform] || 0) + 1;
-    S.stamps.push(Date.now());
-    if (ev.ad && ev.ad.id) {
-      const st = S.adStats[ev.ad.id] || (S.adStats[ev.ad.id] = { adId: ev.ad.id, brand: ev.ad.brand, emoji: ev.ad.emoji, clicks: 0, revenue: 0 });
-      st.clicks = (st.clicks || 0) + 1;
-      st.revenue = Math.round((st.revenue + ev.revenue * ev.share * 2) * 10000) / 10000;
-    }
-    pushFeed(ev);
-    floatCash(ev.userCut);
-    toast("💸 Verified click · +" + money(ev.userCut) + " to " + (ev.ad && ev.ad.brand));
-    checkMilestones();
-    renderStats(); renderTopAds(); drawSpark(); drawCumulus();
-  } catch (err) { /* ignore */ }
-});
-
-es.addEventListener("impression", (e) => {
-  try {
-    const ev = JSON.parse(e.data);
-    if (ev.userId && ev.userId !== uid) return;
-    S.balance = ev.balance;
-    S.impressions = ev.impressions;
-    S.platformCounts[ev.platform] = (S.platformCounts[ev.platform] || 0) + 1;
-    S.stamps.push(Date.now());
-    S.history.push({ ts: ev.ts || Date.now(), balance: ev.balance });
-    if (S.history.length > 300) S.history.shift();
-    if (ev.ad && ev.ad.id && ev.bid != null) {
-      const st = S.adStats[ev.ad.id] || (S.adStats[ev.ad.id] = { adId: ev.ad.id, brand: ev.ad.brand, emoji: ev.ad.emoji, count: 0, revenue: 0 });
-      st.count += 1;
-      st.revenue = Math.round((st.revenue + ev.bid) * 10000) / 10000;
-    }
-    pushFeed(ev);
-    floatCash(ev.userCut);
-    checkMilestones();
-    renderStats(); renderTopAds(); drawSpark(); drawCumulus();
-  } catch (err) { /* ignore */ }
-});
-
-es.addEventListener("session", (e) => {
-  try {
-    const ev = JSON.parse(e.data);
-    if (ev.userId && ev.userId !== uid) return;
-    S.sessions = ev.sessions;
-    S.waitedSeconds = ev.waitedSeconds;
-    S.balance = ev.balance;
-    renderStats();
-  } catch (err) { /* ignore */ }
-});
-
-es.addEventListener("leaderboard", (e) => {
-  try { renderLeaderboard(JSON.parse(e.data).top); } catch (err) { /* ignore */ }
-});
 
 /* -------------------------------- simulate ---------------------------------- */
 $("#simulateBtn").addEventListener("click", async () => {
@@ -414,11 +426,75 @@ $("#simulateBtn").addEventListener("click", async () => {
     await fetch("/api/simulate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: uid, platform: "dashboard-demo" })
+      body: JSON.stringify({ userId: VIEW_UID, platform: "dashboard-demo" })
     });
   } catch (e) { /* ignore */ }
   setTimeout(() => { btn.disabled = false; btn.textContent = label; }, 500);
 });
+
+/* ----------------------------- account (login) ------------------------------- */
+const AMODAL = $("#authModal");
+
+$("#acctChip").addEventListener("click", async () => {
+  try {
+    const me = await (await fetch("/api/auth/me")).json();
+    if (me && me.loggedIn) {
+      if (confirm("@" + me.username + " theke logout korbe?")) {
+        await fetch("/api/auth/logout", { method: "POST" });
+        location.reload();
+      }
+      return;
+    }
+  } catch (e) { /* fall through to modal */ }
+  AMODAL.hidden = false;
+  $("#mUser").focus();
+});
+
+$("#authClose").addEventListener("click", () => { AMODAL.hidden = true; });
+AMODAL.addEventListener("click", (e) => { if (e.target === AMODAL) AMODAL.hidden = true; });
+
+async function submitModal(kind) {
+  const btn = kind === "register" ? $("#mReg") : $("#mLogin");
+  const other = kind === "register" ? $("#mLogin") : $("#mReg");
+  btn.disabled = other.disabled = true;
+  $("#mMsg").textContent = "…backend er sathe jachchi";
+  try {
+    const res = await fetch("/api/auth/" + kind, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: $("#mUser").value, password: $("#mPass").value, mergeUid: uid })
+    });
+    const out = await res.json();
+    if (res.ok && out.ok) {
+      $("#mMsg").textContent = "✓ @" + out.username + " — reloading…";
+      // merge this browser's device ledger into the account, then reload
+      setTimeout(() => location.reload(), 550);
+      return;
+    }
+    $("#mMsg").textContent = "✕ " + (out.error || "failed");
+  } catch (e) {
+    $("#mMsg").textContent = "✕ backend offline";
+  }
+  btn.disabled = other.disabled = false;
+}
+
+$("#mLogin").addEventListener("click", () => submitModal("login"));
+$("#mReg").addEventListener("click", () => submitModal("register"));
+$("#mPass").addEventListener("keydown", (e) => { if (e.key === "Enter") submitModal("login"); });
+
+async function bootAccount() {
+  try {
+    const me = await (await fetch("/api/auth/me")).json();
+    if (me && me.loggedIn) {
+      VIEW_UID = me.userId;
+      const chip = $("#acctChip");
+      chip.classList.add("authed");
+      chip.title = "Ledger linked to @" + me.username + " — click to logout";
+      $("#acctLabel").textContent = "@" + me.username;
+    }
+  } catch (e) { /* offline — device view */ }
+  connectSSE();
+}
 
 window.addEventListener("resize", () => { drawSpark(); drawCumulus(); });
 setInterval(drawSpark, 60000);
@@ -430,3 +506,4 @@ setInterval(() => {
 renderStats();
 drawSpark();
 drawCumulus();
+bootAccount();

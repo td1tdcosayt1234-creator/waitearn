@@ -36,6 +36,19 @@ conversions/report land in YOUR affiliate account → pay users from the ledger
 - Ledger lives on the **server** (`server/data/db.json`) — popup/dashboard read
   server truth. Browser balance field is legacy-compatible but no longer accrues.
 
+## Accounts + tracking wall (v0.5)
+
+- **Login system**: dashboard (topbar 👤 chip) and extension popup (account box)
+  both support register/login. Passwords hashed (`scrypt`), 30-day sessions,
+  HttpOnly cookie for the dashboard + bearer token for the extension.
+- **Device merge**: login/register e current device er balance, clicks,
+  impressions, click-dedupe log sob account e **merge** hoye jay (idempotent —
+  double-merge safe). Extension events then post under the account id.
+- **Tracking wall** (`/admin` → Tracking): sob kichu dhora hoy — pageviews,
+  logins/registers/failed logins, clicks (per offer), impressions, sessions,
+  admin actions, device merges. Lifetime counters + last-14-days mini-chart +
+  last 100 events journal. Backend: `GET /api/admin/tracking`.
+
 ## What it does
 
 - Detects "AI is generating" and shows the offer card on 12 platforms:
@@ -112,7 +125,8 @@ Serious launch = real legal review. Eta education-grade production draft.
 | `GET /api/stream?userId=` | SSE: `snapshot`, `impression`, `click`, `session`, `leaderboard`, `inventory` |
 | `GET /api/me?userId=` | user snapshot (balance, clicks, history, topAds) |
 | `POST /api/simulate` | synthetic impression (test attention — pays nobody) |
-| `GET/PUT /api/admin/overview` · `/api/admin/ads` · `/api/admin/settings` | operator API (header `x-admin-key`) |
+| `POST /api/auth/register` · `/api/auth/login` · `/api/auth/logout` · `GET /api/auth/me` | accounts (`mergeUid` merges the device ledger) |
+| `GET/PUT /api/admin/overview` · `/api/admin/ads` · `/api/admin/settings` · `/api/admin/tracking` | operator API (header `x-admin-key`) |
 
 ## Try it in 10 seconds (no install)
 

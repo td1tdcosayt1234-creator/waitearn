@@ -12,6 +12,7 @@ const UID_KEY = "waitearn_uid";
 const QUEUE_KEY = "waitearn_event_queue";
 const AD_QUEUE_KEY = "waitearn_ad_queue";
 const SERVER_BAL_KEY = "waitearn_server_balance";
+const AUTH_KEY = "waitearn_auth";               // {username, userId, token, ts}
 const BADGE_COLOR = [249, 115, 22, 255]; // orange
 
 /* --------------------------------- badge ----------------------------------- */
@@ -55,6 +56,21 @@ function ensureUserId() {
   });
 }
 
+/* The ledger subject: the logged-in account when present, else this device. */
+function getSubject() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([AUTH_KEY], (g) => {
+        const auth = g && g[AUTH_KEY];
+        if (auth && auth.userId && auth.token) return resolve({ userId: auth.userId, token: auth.token });
+        ensureUserId().then((uid) => resolve({ userId: uid, token: "" }));
+      });
+    } catch (e) {
+      ensureUserId().then((uid) => resolve({ userId: uid, token: "" }));
+    }
+  });
+}
+
 /* ------------------------------ event queue ---------------------------------
    Events land here and are POSTed to /api/events. If the server is down,
    events stay queued in chrome.storage and are flushed later. */
@@ -65,7 +81,7 @@ async function flushQueue() {
   if (flushing) return;
   flushing = true;
   try {
-    const uid = await ensureUserId();
+    const subject = await getSubject();
     const bag = await new Promise((r) => chrome.storage.local.get([QUEUE_KEY], (g) => r(g && g[QUEUE_KEY])));
     const queue = Array.isArray(bag) ? bag : [];
     if (!queue.length) return;
@@ -73,8 +89,11 @@ async function flushQueue() {
     const batch = queue.slice(0, 50);
     const res = await fetch(`${SERVER}/api/events`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: uid, events: batch })
+      headers: {
+        "Content-Type": "application/json",
+        ...(subject.token ? { Authorization: "Bearer " + subject.token } : {})
+      },
+      body: JSON.stringify({ userId: subject.userId, events: batch })
     });
     if (!res.ok) throw new Error("status " + res.status);
     const out = await res.json();
@@ -139,9 +158,19 @@ async function restockAds(prefill) {
 }
 
 /* --------------------------------- wiring ----------------------------------- */
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || typeof msg.type !== "string" || !msg.type.startsWith("waitearn:")) return;
   const p = msg.payload || {};
+
+  /* account login / register from the popup (merge the device ledger in) */
+  if (msg.type === "waitearn:auth") {
+    handleAuth(p, sendResponse);
+    return true; // async response
+  }
+  if (msg.type === "waitearn:auth-logout") {
+    handleLogout(sendResponse);
+    return true; // async response
+  }
 
   if (msg.type === "waitearn:impression") {
     enqueueEvent({ kind: "impression", adId: p.adId, brand: p.brand, platform: p.platform, ts: p.ts || Date.now() });
@@ -149,12 +178,15 @@ chrome.runtime.onMessage.addListener((msg) => {
     // REAL money path — the backend verifies + pays the user's ledger share
     enqueueEvent({ kind: "click", adId: p.adId, brand: p.brand, platform: p.platform, ts: p.ts || Date.now() });
   } else if (msg.type === "waitearn:session" && p.platform) {
-    ensureUserId().then((uid) => {
+    getSubject().then((subject) => {
       try {
         fetch(`${SERVER}/api/session`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: uid, platform: p.platform, seconds: p.seconds })
+          headers: {
+            "Content-Type": "application/json",
+            ...(subject.token ? { Authorization: "Bearer " + subject.token } : {})
+          },
+          body: JSON.stringify({ userId: subject.userId, platform: p.platform, seconds: p.seconds })
         });
       } catch (e) { /* ignore */ }
     });
@@ -162,6 +194,46 @@ chrome.runtime.onMessage.addListener((msg) => {
     restockAds(false);
   }
 });
+
+/* ---------------------------- auth implementations -------------------------- */
+async function handleAuth(p, respond) {
+  const action = p.action === "register" ? "register" : "login";
+  try {
+    const deviceUid = await ensureUserId();
+    const res = await fetch(`${SERVER}/api/auth/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: p.username, password: p.password, mergeUid: deviceUid })
+    });
+    let out = {};
+    try { out = await res.json(); } catch (e) { /* non-json */ }
+    if (!res.ok || !out.ok) {
+      return respond({ ok: false, error: (out && out.error) || ("HTTP " + res.status) });
+    }
+    await new Promise((r) => chrome.storage.local.set(
+      { [AUTH_KEY]: { username: out.username, userId: out.userId, token: out.token, ts: Date.now() } }, r));
+    flushQueue();          // queued events now post under the account id
+    updateLocalBadge();
+    respond({ ok: true, username: out.username, balance: out.balance || 0, clicks: out.clicks || 0 });
+  } catch (e) {
+    respond({ ok: false, error: "backend offline — node server/server.js chalao" });
+  }
+}
+
+async function handleLogout(respond) {
+  try {
+    const g = await new Promise((r) => chrome.storage.local.get([AUTH_KEY], (s) => r(s && s[AUTH_KEY])));
+    if (g && g.token) {
+      try {
+        await fetch(`${SERVER}/api/auth/logout`, { method: "POST", headers: { Authorization: "Bearer " + g.token } });
+      } catch (e) { /* offline is fine — we still clear locally */ }
+    }
+    await new Promise((r) => chrome.storage.local.remove([AUTH_KEY, SERVER_BAL_KEY], r));
+    flushQueue();
+    updateLocalBadge();
+  } catch (e) { /* ignore */ }
+  respond({ ok: true });
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   ensureUserId().then(() => {

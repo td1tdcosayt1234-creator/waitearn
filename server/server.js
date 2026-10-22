@@ -25,6 +25,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
+const crypto = require("crypto");
 
 const PORT = process.env.PORT || 8000;
 const ADMIN_SECRET = process.env.WAITEARN_ADMIN || "waitearn-admin";
@@ -87,7 +88,10 @@ function saveAds() {
 }
 
 /* --------------------------------- storage -------------------------------- */
-let db = { users: {}, settings: { userShare: 0.5 }, adStats: {} };
+const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days per login session
+const TRACKING_CAP = 2000;                    // live journal ring buffer
+
+let db = { users: {}, settings: { userShare: 0.5 }, adStats: {}, accounts: {}, sessions: {}, tracking: [], trackCounts: {}, dayStats: {} };
 let saveTimer = null;
 
 function loadDb() {
@@ -103,6 +107,12 @@ function loadDb() {
   if (!db.settings || typeof db.settings !== "object") db.settings = {};
   if (typeof db.settings.userShare !== "number") db.settings.userShare = 0.5;
   if (!db.adStats || typeof db.adStats !== "object") db.adStats = {};
+  if (!db.accounts || typeof db.accounts !== "object") db.accounts = {};
+  if (!db.sessions || typeof db.sessions !== "object") db.sessions = {};
+  if (!Array.isArray(db.tracking)) db.tracking = [];
+  if (!db.trackCounts || typeof db.trackCounts !== "object") db.trackCounts = {};
+  if (!db.dayStats || typeof db.dayStats !== "object") db.dayStats = {};
+  sweepSessions();
 }
 
 function saveDb() {
@@ -239,6 +249,7 @@ function creditClick(userId, adId, platform) {
   stat.count = stat.clicks;
   stat.revenue = round4(stat.revenue + revenue);
   saveDb();
+  track("click", userId, ad.brand + "@" + platform);
 
   const payload = {
     type: "click",
@@ -275,6 +286,7 @@ function creditImpression(userId, adId, platform, opts = {}) {
   });
   u.events.length = Math.min(u.events.length, EVENTS_CAP);
   saveDb();
+  track("impression", userId, ad.brand + "@" + platform);
 
   const payload = {
     type: "impression",
@@ -289,6 +301,131 @@ function creditImpression(userId, adId, platform, opts = {}) {
   };
   broadcast("impression", payload);
   return { reason: "ok", payload };
+}
+
+/* ------------------------------- tracking wall ------------------------------ */
+/* Everything that happens — pageviews, logins, registers, merges, admin
+   actions, impressions, clicks, sessions — flows through here:
+   1. a live journal (ring buffer)            → /api/admin/tracking "recent"
+   2. lifetime counters per type              → /api/admin/tracking "counts"
+   3. per-day stats (last 14 days chart)      → /api/admin/tracking "days"     */
+function track(type, user, detail) {
+  const evt = { ts: Date.now(), type, user: user ? String(user).slice(0, 64) : "", detail: String(detail || "").slice(0, 110) };
+  db.tracking.push(evt);
+  if (db.tracking.length > TRACKING_CAP) db.tracking.splice(0, db.tracking.length - TRACKING_CAP);
+  db.trackCounts[type] = (db.trackCounts[type] || 0) + 1;
+
+  const day = new Date().toISOString().slice(0, 10);
+  const d = (db.dayStats[day] = db.dayStats[day] || { impressions: 0, clicks: 0, logins: 0, registers: 0, pageviews: 0, sessions: 0 });
+  if (type === "impression") d.impressions++;
+  else if (type === "click") d.clicks++;
+  else if (type === "login") d.logins++;
+  else if (type === "register") d.registers++;
+  else if (type === "pageview" || type === "admin-pageview") d.pageviews++;
+  else if (type === "session") d.sessions++;
+  saveDb();
+  return evt;
+}
+
+/* ------------------------------ accounts (login) ---------------------------- */
+function hashPassword(password, salt) {
+  return crypto.scryptSync(String(password), String(salt), 32).toString("hex");
+}
+
+function newSessionToken() {
+  return crypto.randomBytes(24).toString("hex");
+}
+
+function sweepSessions() {
+  const now = Date.now();
+  if (typeof db.settings.nextSessionSweep !== "number") db.settings.nextSessionSweep = 0;
+  if (now - db.settings.nextSessionSweep < 3600 * 1000) return;
+  db.settings.nextSessionSweep = now;
+  const gone = [];
+  for (const [tok, s] of Object.entries(db.sessions)) {
+    if (!s || now - (s.createdAt || 0) > SESSION_TTL_MS) gone.push(tok);
+  }
+  for (const tok of gone) delete db.sessions[tok];
+  if (gone.length) saveDb();
+}
+
+function cookieToken(req) {
+  const raw = req.headers.cookie || "";
+  for (const part of raw.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    if (part.slice(0, idx).trim() === "waitearn_session") {
+      try { return decodeURIComponent(part.slice(idx + 1).trim()); } catch (e) { return part.slice(idx + 1).trim(); }
+    }
+  }
+  return "";
+}
+
+function bearerToken(req) {
+  const h = req.headers.authorization || "";
+  return h.startsWith("Bearer ") ? h.slice(7).trim() : "";
+}
+
+function authFromReq(req) {
+  const tok = bearerToken(req) || cookieToken(req);
+  if (!tok) return null;
+  const s = db.sessions[tok];
+  if (!s || Date.now() - (s.createdAt || 0) > SESSION_TTL_MS) return null;
+  const acct = db.accounts[s.username];
+  if (!acct) return null;
+  return { token: tok, username: acct.username, userId: acct.userId, session: s };
+}
+
+function setAuthCookie(res, token) {
+  res.setHeader("Set-Cookie", "waitearn_session=" + encodeURIComponent(token) + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" + Math.floor(SESSION_TTL_MS / 1000));
+}
+
+function clearAuthCookie(res) {
+  res.setHeader("Set-Cookie", "waitearn_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+}
+
+function createAccount(usernameRaw, password) {
+  const name = String(usernameRaw || "").trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(name)) return { error: "username must be 3–20 chars: a-z 0-9 _" };
+  if (typeof password !== "string" || password.length < 6) return { error: "password must be at least 6 characters" };
+  if (db.accounts[name]) return { error: "username already taken" };
+  const salt = crypto.randomBytes(8).toString("hex");
+  const acct = { username: name, salt, hash: hashPassword(password, salt), createdAt: Date.now(), userId: "acct-" + name };
+  db.accounts[name] = acct;
+  userFor(acct.userId); // ready the ledger record
+  saveDb();
+  return { account: acct };
+}
+
+/* Move a device's earnings + stats into the logged-in account (idempotent:
+   the device record is zeroed + flagged after merging). */
+function mergeDeviceIntoAccount(accountId, deviceUid) {
+  if (!deviceUid || !validId(deviceUid) || deviceUid === accountId) return 0;
+  const dev = db.users[deviceUid];
+  if (!dev || dev.mergedInto) return 0;
+  const u = userFor(accountId);
+
+  u.balance = round4(u.balance + (Number(dev.balance) || 0));
+  u.clicks += Number(dev.clicks) || 0;
+  u.impressions += Number(dev.impressions) || 0;
+  u.sessions += Number(dev.sessions) || 0;
+  u.waitedSeconds = round4(u.waitedSeconds + (Number(dev.waitedSeconds) || 0));
+  for (const [p, c] of Object.entries(dev.platformCounts || {})) {
+    u.platformCounts[p] = (u.platformCounts[p] || 0) + (Number(c) || 0);
+  }
+  for (const [adId, lastTs] of Object.entries(dev.clickLog || {})) {
+    u.clickLog[adId] = Math.max(u.clickLog[adId] || 0, Number(lastTs) || 0);
+  }
+  u.history = (u.history || []).concat(dev.history || []).sort((a, b) => a.ts - b.ts);
+  if (u.history.length > HISTORY_CAP) u.history.shift();
+
+  dev.mergedInto = accountId;
+  dev.balance = 0; dev.clicks = 0; dev.impressions = 0; dev.sessions = 0; dev.waitedSeconds = 0;
+  dev.platformCounts = {}; dev.clickLog = {};
+  dev.history = [];
+  track("merge", deviceUid, "-> " + accountId);
+  saveDb();
+  return 1;
 }
 
 /* --------------------------------- helpers -------------------------------- */
@@ -448,6 +585,7 @@ async function handleApi(req, res, url) {
     u.sessions += 1;
     u.waitedSeconds += Math.max(0, Number(body.seconds) || 0);
     saveDb();
+    track("session", userId, String(body.platform || "unknown") + " " + Math.round(Number(body.seconds) || 0) + "s");
     const payload = { type: "session", userId, sessions: u.sessions, waitedSeconds: u.waitedSeconds, balance: u.balance, ts: Date.now() };
     broadcast("session", payload);
     return json(res, 200, payload);
@@ -461,7 +599,57 @@ async function handleApi(req, res, url) {
     if (!validId(userId)) return json(res, 400, { error: "userId invalid" });
     const ad = ads[Math.floor(Math.random() * ads.length)];
     const r = creditImpression(userId, ad.id, body.platform || "dashboard-demo", { synthetic: true });
+    track("simulate", userId, ad.brand + "@" + String(body.platform || "dashboard-demo"));
     return json(res, 200, { ok: true, event: r.payload });
+  }
+
+  /* --------------------- accounts: register / login / me ------------------- */
+  if (route === "/api/auth/register" && req.method === "POST") {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: e.message }); }
+    const r = createAccount(body.username, body.password);
+    if (r.error) { track("register-fail", body.username || "", r.error); return json(res, 400, { error: r.error }); }
+    const tok = newSessionToken();
+    db.sessions[tok] = { username: r.account.username, createdAt: Date.now() };
+    const merged = mergeDeviceIntoAccount(r.account.userId, String(body.mergeUid || ""));
+    setAuthCookie(res, tok);
+    track("register", r.account.username, (merged ? "merged " + String(body.mergeUid).slice(0, 8) : "fresh"));
+    saveDb();
+    const u = userFor(r.account.userId);
+    return json(res, 200, { ok: true, username: r.account.username, userId: r.account.userId, token: tok, balance: u.balance, clicks: u.clicks });
+  }
+
+  if (route === "/api/auth/login" && req.method === "POST") {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: e.message }); }
+    const name = String(body.username || "").trim().toLowerCase();
+    const acct = db.accounts[name];
+    if (!acct || hashPassword(body.password || "", acct.salt) !== acct.hash) {
+      track("login-fail", name, "");
+      return json(res, 401, { error: "wrong username or password" });
+    }
+    const tok = newSessionToken();
+    db.sessions[tok] = { username: acct.username, createdAt: Date.now() };
+    const merged = mergeDeviceIntoAccount(acct.userId, String(body.mergeUid || ""));
+    setAuthCookie(res, tok);
+    track("login", acct.username, (merged ? "merged " + String(body.mergeUid).slice(0, 8) : "device:none"));
+    saveDb();
+    const u = userFor(acct.userId);
+    return json(res, 200, { ok: true, username: acct.username, userId: acct.userId, token: tok, balance: u.balance, clicks: u.clicks });
+  }
+
+  if (route === "/api/auth/logout" && req.method === "POST") {
+    const a = authFromReq(req);
+    if (a) { delete db.sessions[a.token]; track("logout", a.username, ""); saveDb(); }
+    clearAuthCookie(res);
+    return json(res, 200, { ok: true });
+  }
+
+  if (route === "/api/auth/me" && req.method === "GET") {
+    const a = authFromReq(req);
+    if (!a) return json(res, 200, { loggedIn: false });
+    const u = userFor(a.userId);
+    return json(res, 200, { loggedIn: true, username: a.username, userId: a.userId, balance: u.balance, clicks: u.clicks, userShare: db.settings.userShare });
   }
 
   /* ------------------------------ admin API ------------------------------- */
@@ -484,6 +672,15 @@ async function handleApi(req, res, url) {
           .sort((a, b) => (b.clicks || 0) - (a.clicks || 0))
       });
     }
+    if (route === "/api/admin/tracking" && req.method === "GET") {
+      const days = [];
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+        const s = db.dayStats[d] || {};
+        days.push({ day: d, impressions: s.impressions || 0, clicks: s.clicks || 0, logins: s.logins || 0, registers: s.registers || 0, pageviews: s.pageviews || 0, sessions: s.sessions || 0 });
+      }
+      return json(res, 200, { counts: db.trackCounts, days, recent: db.tracking.slice(-100).reverse() });
+    }
     if (route === "/api/admin/ads" && (req.method === "PUT" || req.method === "POST")) {
       let body;
       try { body = await readBody(req); } catch (e) { return json(res, 400, { error: e.message }); }
@@ -492,6 +689,7 @@ async function handleApi(req, res, url) {
       saveAds();
       AD_BY_ID = new Map(ads.map((a) => [a.id, a]));
       broadcast("inventory", { count: ads.length, ts: Date.now() });
+      track("admin-ads", "operator", ads.length + " offers live");
       return json(res, 200, { ok: true, count: ads.length });
     }
     if (route === "/api/admin/settings" && req.method === "POST") {
@@ -503,6 +701,7 @@ async function handleApi(req, res, url) {
       }
       db.settings.userShare = round4(share);
       saveDb();
+      track("admin-settings", "operator", "userShare=" + db.settings.userShare);
       return json(res, 200, { ok: true, settings: db.settings });
     }
     return json(res, 404, { error: "admin route not found" });
@@ -516,7 +715,11 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   try {
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
-    if (req.method === "GET") return serveStatic(res, url.pathname);
+    if (req.method === "GET") {
+      if (url.pathname === "/") track("pageview", null, "dashboard");
+      else if (url.pathname === "/admin") track("admin-pageview", null, "operator panel");
+      return serveStatic(res, url.pathname);
+    }
     res.writeHead(405, { "Content-Type": "text/plain" });
     return res.end("405 — method not allowed");
   } catch (e) {

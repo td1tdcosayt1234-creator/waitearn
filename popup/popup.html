@@ -23,6 +23,26 @@
     <b class="srv-b" id="srvBalance"></b>
   </section>
 
+  <section class="acct" id="acctBox">
+    <div class="acct-logged" id="acctLogged" hidden>
+      <span class="uv-avatar">👤</span>
+      <span class="uv-name" id="acctName">@user</span>
+      <button id="logoutBtn" class="link">logout</button>
+    </div>
+    <div id="acctForm">
+      <div class="acct-title">Lock your ledger to an account</div>
+      <div class="acct-inputs">
+        <input id="uName" placeholder="username" autocomplete="username" />
+        <input id="uPass" type="password" placeholder="password (6+)" autocomplete="current-password" />
+      </div>
+      <div class="acct-btns">
+        <button id="loginBtn" class="mini">Login</button>
+        <button id="regBtn" class="mini ghost">Register</button>
+      </div>
+      <div class="acct-msg" id="acctMsg"></div>
+    </div>
+  </section>
+
   <section class="stats">
     <div class="stat"><b id="impressions">0</b><span>impressions</span></div>
     <div class="stat"><b id="waited">0s</b><span>waited</span></div>

@@ -1,6 +1,7 @@
-/* WaitEarn popup — shows your (mock) balance and stats, stored in chrome.storage.local */
+/* WaitEarn popup — server-backed balance + stats + account login. */
 
 const KEY = "waitearn_state_v1";
+const AUTH_KEY = "waitearn_auth";
 const $ = (id) => document.getElementById(id);
 
 function fmtSecs(s) {
@@ -87,8 +88,75 @@ $("reset").addEventListener("click", async () => {
 
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[KEY]) render();
+    if (area === "local" && (changes[KEY] || changes[AUTH_KEY])) render();
   });
 } catch (e) { /* ignore */ }
+
+/* -------------------------------- account ----------------------------------- */
+function sendBg(msg) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(msg, (resp) => {
+        void chrome.runtime.lastError; // swallow closed-port errors
+        resolve(resp || {});
+      });
+    } catch (e) { resolve({ ok: false, error: "extension context lost — reload the extension" }); }
+  });
+}
+
+function getAuth() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([AUTH_KEY], (g) => resolve((g && g[AUTH_KEY]) || null));
+    } catch (e) { resolve(null); }
+  });
+}
+
+async function renderAuth() {
+  const a = await getAuth();
+  const logged = !!(a && a.username);
+  $("acctLogged").hidden = !logged;
+  $("acctForm").hidden = logged;
+  if (logged) {
+    $("acctName").textContent = "@" + a.username;
+    $("acctMsg").textContent = "";
+  }
+}
+
+function acctBusy(on) {
+  $("loginBtn").disabled = on;
+  $("regBtn").disabled = on;
+}
+
+async function submitAuth(action) {
+  const username = $("uName").value.trim();
+  const password = $("uPass").value;
+  if (!username || !password) {
+    $("acctMsg").textContent = "username r password duitai dan";
+    return;
+  }
+  acctBusy(true);
+  $("acctMsg").textContent = "…connecting to ledger";
+  const out = await sendBg({ type: "waitearn:auth", payload: { action, username, password } });
+  acctBusy(false);
+  if (out && out.ok) {
+    $("uPass").value = "";
+    $("acctMsg").textContent = "✓ @" + out.username + " linked · balance $" + (out.balance || 0).toFixed(2) + " (" + (out.clicks || 0) + " clicks)";
+    renderServerRow();
+    renderAuth();
+  } else {
+    $("acctMsg").textContent = "✕ " + ((out && out.error) || "failed");
+  }
+}
+
+$("loginBtn").addEventListener("click", () => submitAuth("login"));
+$("regBtn").addEventListener("click", () => submitAuth("register"));
+$("uPass").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth("login"); });
+
+$("logoutBtn").addEventListener("click", async () => {
+  await sendBg({ type: "waitearn:auth-logout" });
+  renderAuth();
+  renderServerRow();
+});
 
 render();

@@ -21,6 +21,7 @@
     <div class="live-pill"><span class="dot"></span><span id="connText">connecting…</span></div>
 
     <div class="top-chips">
+      <button class="chip" id="acctChip" title="Login / register — account e ledger link hoy">👤 <span id="acctLabel">Login</span></button>
       <button class="chip" id="uidChip" title="Click to copy your device ID">⧉ <span id="uidShort">—</span></button>
       <a class="chip" href="/admin" target="_blank" rel="noopener">🛠 Admin</a>
       <button class="chip simulate" id="simulateBtn" title="Fires a synthetic attention event (no money moves — real earnings come from verified CTA clicks)">🧪 Test attention</button>
@@ -101,6 +102,22 @@
   </main>
 
   <div id="toast" class="toast"></div>
+
+  <div class="modal-ov" id="authModal" hidden>
+    <div class="modal">
+      <button class="mx" id="authClose" title="Close">✕</button>
+      <div class="m-mark"></div>
+      <div class="m-title">Login / Register</div>
+      <div class="m-sub">Account banale current device er balance + clicks e ekta ledger depreciate hoyege — sob merge hoye jabe.</div>
+      <input id="mUser" placeholder="username (a-z 0-9 _)" autocomplete="username" maxlength="20" />
+      <input id="mPass" type="password" placeholder="password (6+ chars)" autocomplete="current-password" />
+      <div class="m-row">
+        <button class="m-btn" id="mLogin">Login</button>
+        <button class="m-btn ghost" id="mReg">Register</button>
+      </div>
+      <div class="m-msg" id="mMsg"></div>
+    </div>
+  </div>
 
   <footer class="foot">
     <div><b>1.</b> Node server run korun <code>node server/server.js</code></div>

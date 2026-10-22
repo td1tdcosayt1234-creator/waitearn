@@ -41,6 +41,17 @@
   .toast.on { opacity:1; }
   .login { max-width:380px; margin:12vh auto; text-align:center; }
   .login input { width:230px; }
+  /* tracking wall */
+  .days { display:flex; align-items:flex-end; gap:6px; margin:14px 0 10px; height:64px; }
+  .day { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .day span { font-size:9px; color:var(--mut); }
+  .dbar { display:flex; align-items:flex-end; gap:2px; height:44px; }
+  .dbar i { width:5px; background:#fdba74; border-radius:3px 3px 0 0; min-height:1px; display:block; }
+  .dbar i.c { background:#f97316; }
+  .dtail { color:var(--mut); font-size:11px; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .td-time { color:var(--mut); font-size:11px; white-space:nowrap; }
+  .tclick { background:#f97316; color:#fff; border-color:#f97316; }
+  .tlogin { background:rgba(249,115,22,.1); color:#c2570c; border-color:rgba(249,115,22,.4) }
 </style>
 </head>
 <body>
@@ -101,6 +112,19 @@
           <p class="hint">0.50 = user pays 50% of every verified click. Baki = platform.</p>
         </div>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>Tracking wall — jai holo sob, live <button class="btn ghost" id="trkRefresh" style="margin-left:8px;padding:5px 10px;font-size:11px">↻ Refresh</button></h2>
+      <div class="row" id="trackKpis"></div>
+      <div class="days" id="trackDays"></div>
+      <div style="overflow-x:auto;max-height:340px;overflow-y:auto">
+        <table id="trkTable">
+          <thead><tr><th>Time</th><th>Event</th><th>User</th><th>Detail</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint">Clicks, impressions, logins, registers, device-merge, admin actions, pageviews — sob ekhane. Lifetime counters ekhono showing ↑, niche last 100 events.</p>
     </section>
   </main>
 
@@ -166,7 +190,7 @@
         const st = statOf(a.id);
         tr.innerHTML = `
           <td><span class="f-emoji" style="width:34px;display:inline-block">${a.emoji}</span><input class="f-brand" value="${a.brand.replace(/"/g, "&quot;")}" style="margin-top:4px" /></td>
-          <td><input class="f-head" value="${a.headline.replace(/"/g, "&quot;")}" /></td>
+          <td><input class="f-head" value="${a.headline.replace(/"/g, "&quot;")}" /><input class="f-sub" value="${(a.sub || "").replace(/"/g, "&quot;")}" placeholder="sub-line (optional)" style="margin-top:4px" /></td>
           <td><input class="f-cta" value="${a.cta.replace(/"/g, "&quot;")}" /></td>
           <td><input class="f-url" value="${a.url.replace(/"/g, "&quot;")}" placeholder="https://…/ref=YOUR_ID" /></td>
           <td><input class="f-cpc" type="number" step="0.05" min="0" value="${a.cpc}" /></td>
@@ -187,6 +211,7 @@
         renderOverview(cached);
         renderAds(cached.ads, Object.fromEntries((cached.adStats || []).map((s) => [s.adId, s])));
         $("#app").hidden = false;
+        renderTracking();
       } catch (e) {
         $("#loginBox").hidden = false;
         $("#app").hidden = true;
@@ -194,9 +219,41 @@
       }
     }
 
-    $("#loginBtn").addEventListener("click", () => { $("#key").value = $("#keyLogin"); load(); });
+    /* tracking wall — sob kaj ekhane jhore, polling e live thake */
+    async function renderTracking() {
+      try {
+        const t = await api("/api/admin/tracking");
+        const order = ["click", "login", "register", "merge", "impression", "pageview", "session", "simulate", "admin-ads", "admin-settings", "logout", "login-fail", "admin-pageview"];
+        const kpis = order.filter((ty) => t.counts[ty]).map((ty) => `
+          <div class="kpi"><b>${(t.counts[ty] || 0).toLocaleString()}</b><span>${ty}</span></div>`).join("");
+        $("#trackKpis").innerHTML = kpis || '<p class="hint">Kono event tracked hoy nai ekhono.</p>';
+
+        const maxI = Math.max(1, ...t.days.map((d) => (d.impressions || 0) + (d.clicks || 0) + (d.logins || 0)));
+        $("#trackDays").innerHTML = t.days.map((d) => {
+          const hI = Math.max(1, Math.round(((d.impressions || 0) / maxI) * 44));
+          const hC = Math.max(0, Math.round(((d.clicks || 0) / maxI) * 44));
+          const hL = Math.max(0, Math.round(((d.logins || 0) / maxI) * 44));
+          return `<div class="day" title="${d.day} — ${d.impressions} impressions · ${d.clicks} clicks · ${d.logins} logins">
+          <div class="dbar"><i style="height:${hI}px"></i><i class="c" style="height:${hC}px"></i><i style="height:${hL}px"></i></div>
+          <span>${d.day.slice(5)}</span></div>`;
+        }).join("");
+
+        $("#trkTable tbody").innerHTML = (t.recent || []).map((r) => `
+        <tr>
+          <td class="td-time">${new Date(r.ts).toLocaleTimeString()}</td>
+          <td><span class="tag ${r.type === "click" ? "tclick" : r.type === "login" ? "tlogin" : ""}">${r.type}</span></td>
+          <td style="font-family:ui-monospace,monospace;font-size:11px">${r.user || "—"}</td>
+          <td class="dtail" title="${(r.detail || "").replace(/"/g, "&quot;")}">${r.detail || ""}</td>
+        </tr>`).join("");
+      } catch (e) { /* silent */ }
+    }
+
+    setInterval(() => { if (!$("#app").hidden && !document.hidden) renderTracking(); }, 10000);
+    $("#trkRefresh").addEventListener("click", renderTracking);
+
+    $("#loginBtn").addEventListener("click", () => { $("#key").value = $("#keyLogin").value || $("#key").value; load(); });
+    $("#loadBtn").addEventListener("click", () => { $("#keyLogin").value = $("#key").value || $("#keyLogin").value; load(); });
     $("#keyLogin").addEventListener("keydown", (e) => { if (e.key === "Enter") { $("#key").value = $("#keyLogin").value; load(); } });
-    $("#loadBtn").addEventListener("click", () => { $("#keyLogin").value = $("#key").value; load(); });
 
     $("#addRow").addEventListener("click", () => {
       renderAds([{ id: "offer-" + Date.now().toString(36), brand: "", emoji: "🎯", headline: "", cta: "Open", url: "", cpc: 0.5, accent: "#f97316" }].concat(collectAds()), null);

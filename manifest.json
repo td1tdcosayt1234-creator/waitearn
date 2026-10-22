@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "WaitEarn — public prototype",
   "short_name": "WaitEarn",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Prototype inspired by ChatWait: sponsored cards while AI chats generate responses, with a real-time backend + dashboard. Demo ads only — earnings are fake.",
   "permissions": ["storage"],
   "host_permissions": [
